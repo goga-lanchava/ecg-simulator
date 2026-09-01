@@ -41,9 +41,9 @@ jobs:
           - os: macos-latest          # Apple Silicon
             label: macos-arm64
             asset: ECG-Simulator-macos-arm64.zip
-          - os: macos-13              # Intel
-            label: macos-x86_64
-            asset: ECG-Simulator-macos-x86_64.zip
+          # No Intel (macos-13) target: hosted Intel runners queue for hours,
+          # and an Intel Mac cannot run an arm64 build. Intel users build from
+          # source - see the README.
 
     runs-on: ${{ matrix.os }}
     steps:
@@ -110,18 +110,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Idempotent: re-running the same tag refreshes the assets rather
+          # than failing because the release already exists.
+          if gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "${GITHUB_REF_NAME}" artifacts/*.zip \
+              --repo "${GITHUB_REPOSITORY}" --clobber
+            exit 0
+          fi
           gh release create "${GITHUB_REF_NAME}" artifacts/*.zip \
             --repo "${GITHUB_REPOSITORY}" \
             --title "ECG Simulator ${GITHUB_REF_NAME}" \
-            --generate-notes \
             --notes "
           ## Downloads
 
           | Platform | File |
           |---|---|
-          | Windows (x64) | \`ECG-Simulator-windows-x64.zip\` |
+          | Windows 10/11 (x64) | \`ECG-Simulator-windows-x64.zip\` |
           | macOS (Apple Silicon) | \`ECG-Simulator-macos-arm64.zip\` |
-          | macOS (Intel) | \`ECG-Simulator-macos-x86_64.zip\` |
+
+          Intel Macs are not covered; build from source (see the README).
 
           ### macOS: unsigned build
 

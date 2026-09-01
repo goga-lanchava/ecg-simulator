@@ -18,7 +18,9 @@ for your platform, unzip, and run — there is nothing to install.
 |---|---|
 | Windows 10/11 (64-bit) | `ECG-Simulator-windows-x64.zip` |
 | macOS (Apple Silicon) | `ECG-Simulator-macos-arm64.zip` |
-| macOS (Intel) | `ECG-Simulator-macos-x86_64.zip` |
+
+Intel Macs have no prebuilt binary — an Intel machine cannot run an Apple
+Silicon build, so run it from source instead (below).
 
 The binaries are not code-signed, so both operating systems will object the
 first time:
