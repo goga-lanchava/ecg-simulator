@@ -120,6 +120,37 @@ python tests/preview_pathology.py           # the whole catalogue -> PNG
 python tests/preview_window.py out.png AFib Cheyne-Stokes   # app screenshot
 ```
 
+## Building executables
+
+Push a tag and GitHub Actions builds all three targets and publishes them as a
+release:
+
+```bash
+git tag v1.0.0 && git push origin v1.0.0
+```
+
+The workflow can also be run by hand from the Actions tab, which builds the same
+binaries and leaves them as downloadable artifacts without publishing anything.
+
+To build locally for the platform you are on:
+
+```bash
+pip install pyinstaller
+python packaging/make_icon.py          # optional; Windows icon
+pyinstaller ECG-Simulator.spec --noconfirm --clean
+```
+
+Windows produces a single `dist/ECG-Simulator.exe`; macOS produces
+`dist/ECG Simulator.app`. PyInstaller does not cross-compile, so a macOS build
+has to happen on macOS — that is what the workflow's `macos-latest` and
+`macos-13` runners are for.
+
+Neither binary is code-signed. macOS Gatekeeper will refuse an unsigned app on
+first launch (right-click → **Open**, or
+`xattr -dr com.apple.quarantine "ECG Simulator.app"`), and Windows SmartScreen
+will warn about an unrecognised publisher. Signing needs a paid Apple Developer
+account and a Windows code-signing certificate respectively.
+
 ## Keyboard
 
 | | |

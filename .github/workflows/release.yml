@@ -1,0 +1,142 @@
+name: Build executables
+
+# Two ways in:
+#   * push a tag (v1.0.0) -> builds everything and publishes a release
+#   * run it by hand      -> builds everything and leaves the binaries as
+#                            downloadable artifacts, publishing nothing
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write        # needed only by the release job
+
+jobs:
+  test:
+    # The suites that need no display, as a cheap guard against shipping a
+    # broken build.  The GUI suites want a real window server and are left to
+    # run locally.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python tests/test_core.py
+      - run: python tests/test_generator.py
+        env:
+          QT_QPA_PLATFORM: offscreen
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows-x64
+            asset: ECG-Simulator-windows-x64.zip
+          - os: macos-latest          # Apple Silicon
+            label: macos-arm64
+            asset: ECG-Simulator-macos-arm64.zip
+          - os: macos-13              # Intel
+            label: macos-x86_64
+            asset: ECG-Simulator-macos-x86_64.zip
+
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt pyinstaller
+
+      - name: Generate the icon
+        run: python packaging/make_icon.py
+        env:
+          QT_QPA_PLATFORM: offscreen
+        continue-on-error: true      # cosmetic; never fail a build over it
+
+      - name: Build
+        run: pyinstaller ECG-Simulator.spec --noconfirm --clean
+
+      # ditto is the macOS-correct way to archive a .app: plain zip mangles the
+      # symlinks inside the bundle and drops the executable bit, which produces
+      # an app that will not open.
+      - name: Package (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          cd dist
+          ditto -c -k --keepParent "ECG Simulator.app" "../${{ matrix.asset }}"
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: Compress-Archive -Path dist/ECG-Simulator.exe -DestinationPath ${{ matrix.asset }}
+
+      - name: Check it launches
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $p = Start-Process dist/ECG-Simulator.exe -PassThru
+          Start-Sleep -Seconds 25
+          if ($p.HasExited) { throw "exited early with code $($p.ExitCode)" }
+          Stop-Process -Id $p.Id -Force
+          "launched and stayed up"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.label }}
+          path: ${{ matrix.asset }}
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" artifacts/*.zip \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "ECG Simulator ${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --notes "
+          ## Downloads
+
+          | Platform | File |
+          |---|---|
+          | Windows (x64) | \`ECG-Simulator-windows-x64.zip\` |
+          | macOS (Apple Silicon) | \`ECG-Simulator-macos-arm64.zip\` |
+          | macOS (Intel) | \`ECG-Simulator-macos-x86_64.zip\` |
+
+          ### macOS: unsigned build
+
+          These binaries are not code-signed or notarised, so Gatekeeper will
+          refuse them on first launch. To open one anyway: right-click the app,
+          choose **Open**, then confirm. Or from a terminal:
+
+          \`\`\`
+          xattr -dr com.apple.quarantine \"ECG Simulator.app\"
+          \`\`\`
+
+          Signing requires a paid Apple Developer account.
+
+          ### Windows
+
+          SmartScreen may warn about an unrecognised publisher for the same
+          reason: the executable is unsigned. Choose **More info -> Run anyway**.
+          "
