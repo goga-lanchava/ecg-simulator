@@ -1,0 +1,5 @@
+# Verified against Python 3.14.7 on Windows.
+PyQt6>=6.6
+pyqtgraph>=0.13
+numpy>=1.25
+scipy>=1.10
